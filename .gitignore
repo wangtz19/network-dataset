@@ -4,3 +4,4 @@ img/
 pdf/
 liantongzhidao*
 *.log
+.openai-key
