@@ -40,15 +40,56 @@ pattern_list = [
 chinese_punctuations = "，。、；：？！…—·「」『』（）［］【】《》〈〉“”‘’. "
 english_punctuations = ",.;:?!…—·\"'()[]{}<>"
 
+non_printable_characters = [
+    "\u200b", # zero width space
+    "\u200e", # left-to-right mark
+    "\u200f", # right-to-left mark
+    "\u202a", # left-to-right embedding
+    "\u202b", # right-to-left embedding
+    "\u202c", # pop directional formatting
+    "\u202d", # left-to-right override
+    "\u202e", # right-to-left override
+    "\u2060", # word joiner
+    "\u2061", # function application
+    "\u2062", # invisible times
+    "\u2063", # invisible separator
+    "\u2064", # invisible plus
+    "\u2066", # left-to-right isolate
+    "\u2067", # right-to-left isolate
+    "\u2068", # first strong isolate
+    "\u2069", # pop directional isolate
+    "\u206a", # inhibit symmetric swapping
+    "\u206b", # activate symmetric swapping
+    "\u206c", # inhibit Arabic form shaping
+    "\u206d", # activate Arabic form shaping
+    "\u206e", # national digit shapes
+    "\u206f", # nominal digit shapes
+    "\ufeff", # zero width no-break space
+    "\ufff9", # interlinear annotation anchor
+    "\ufffa", # interlinear annotation separator
+    "\ufffb", # interlinear annotation terminator
+]
+
+
+def postprocess(text):
+    text = text.replace(" ", "")
+    text = text.replace("　", "")
+    text = text.strip("\n "+chinese_punctuations+english_punctuations)
+    # replace invisible characters
+    for ch in non_printable_characters:
+        text = text.replace(ch, "")
+    return text
+
+
 
 def match_and_split_heading(text, pattern=start_pattern):
     match = pattern.match(text)
     if match:
         heading_rank = match.group().strip()
-        heading_text = text[match.end():].strip("\n "+chinese_punctuations+english_punctuations)
+        heading_text = postprocess(text[match.end():])
         return heading_rank, heading_text
     else:
-        return None, text.strip("\n "+chinese_punctuations+english_punctuations)
+        return None, postprocess(text)
 
 
 def get_heading_info(text):
@@ -76,7 +117,7 @@ def split_docx_by_heading(filename, min_sentence_len=2):
                 key = "#".join([x[1] for x in heading_stack])
                 if key not in doc_tree:
                     doc_tree[key] = ""
-                doc_tree[key] += para.text
+                doc_tree[key] += postprocess(para.text)
     return doc_tree
 
 
@@ -99,7 +140,7 @@ def split_txt_by_heading(contents, min_sentence_len=2):
                 key = "#".join([x[2] for x in heading_stack])
                 if key not in doc_tree:
                     doc_tree[key] = ""
-                doc_tree[key] += line
+                doc_tree[key] += postprocess(line)
     return doc_tree
 
 
