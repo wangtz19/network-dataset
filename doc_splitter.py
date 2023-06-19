@@ -5,6 +5,7 @@ import pandas as pd
 import pypandoc
 from transformers import AutoTokenizer
 from tqdm import tqdm
+import opencc
 
 
 chinese_num = "零一二三四五六七八九十"
@@ -70,6 +71,8 @@ non_printable_characters = [
     "\ufffb", # interlinear annotation terminator
 ]
 
+converter = opencc.OpenCC('t2s.json') # convert Traditional Chinese to Simplified Chinese
+
 
 def postprocess(text):
     text = text.replace(" ", "")
@@ -78,6 +81,8 @@ def postprocess(text):
     # replace invisible characters
     for ch in non_printable_characters:
         text = text.replace(ch, "")
+    # convert to simplified chinese
+    text = converter.convert(text)
     return text
 
 
