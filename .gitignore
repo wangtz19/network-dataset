@@ -6,3 +6,5 @@ liantongzhidao*
 *.log
 .openai-key
 data/
+book/
+rfc/
