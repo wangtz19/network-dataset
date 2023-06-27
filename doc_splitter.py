@@ -1,11 +1,13 @@
 import os
 import re
-from docx import Document
+# from docx import Document
 import pandas as pd
 import pypandoc
 from transformers import AutoTokenizer
 from tqdm import tqdm
 import opencc
+import zipfile
+import xml.etree.ElementTree as ET
 
 
 chinese_num = "零一二三四五六七八九十"
@@ -15,9 +17,10 @@ pattern_list = [
     r"^第\s*[%s\d]+\s*部分\s*" % chinese_num, # 第一部分
     r"^\d+\s*[、\)〕）]\s*", # 1、1)
     r"^[（\(〔]\d+[）\)〕]", # （1）(1) 〔1〕
+    r"^\d+(\.\d+)+\s*", # 1.2.3
+    r"^\d+(-\d+)*\s+", # 1-1, 1-1-1, 1-1-1-1 ... 
+    r"^第\s*[%s\d]+\s*章\s*" % chinese_num, # 第1章
     r"^_*\d+\s*[．\.]\s+", # 1．1. 
-    r"^\d(-\d)*\s+", # 1-1, 1-1-1, 1-1-1-1 ... 
-    r"^第\s*[%s\d]+\s*章\s*", # 第1章
 ]
 start_pattern = re.compile("|".join(pattern_list))
 
@@ -72,6 +75,7 @@ def postprocess(text):
 
 
 def match_and_split_heading(text, pattern=start_pattern):
+    text = text.strip()
     match = pattern.match(text)
     if match:
         heading_rank = match.group().strip()
@@ -90,24 +94,72 @@ def get_heading_info(text):
     return None, None, text
 
 
-def split_docx_by_heading(filename, min_sentence_len=2):
+# def split_docx_by_heading(filename, min_sentence_len=2):
+#     doc_tree = {}
+#     heading_stack = []
+#     doc = Document(filename)
+#     for para in doc.paragraphs:
+#         if para.style.name.startswith("Heading"):
+#             level = int(para.style.name[7:].strip())
+#             heading_stack = heading_stack[:level-1]
+#             heading_rank, heading_text = match_and_split_heading(para.text)
+#             if heading_rank is None:
+#                 print("Parse Heading Error: ", para.text)
+#             heading_stack.append((level, heading_text))
+#         else:
+#             if len(heading_stack) > 0 and len(para.text) > 0:
+#                 key = "#".join([x[1] for x in heading_stack])
+#                 if key not in doc_tree:
+#                     doc_tree[key] = ""
+#                 doc_tree[key] += postprocess(para.text)
+#     return doc_tree
+
+
+HEADING1_LEVEL = 2
+OUTLINELVL1_LEVEL = 0
+
+def parse_level(para):
+    schema = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    try:
+        style = para.find("w:pPr", ns).find("w:pStyle", ns)
+        level = style.attrib[schema + "val"]
+        return int(level) - HEADING1_LEVEL + 1
+    except:
+        try:
+            outlineLvl = para.find("w:pPr", ns).find("w:outlineLvl", ns)
+            level = outlineLvl.attrib[schema + "val"]
+            return int(level) - OUTLINELVL1_LEVEL + 1
+        except:
+            return None
+
+
+def split_docx_from_xml(filename, min_sentence_len=2):
+    doc = zipfile.ZipFile(filename).read("word/document.xml")
+    root = ET.fromstring(doc)
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    body = root.find("w:body", ns)
+    paragraphs = body.findall("w:p", ns)
+    
     doc_tree = {}
     heading_stack = []
-    doc = Document(filename)
-    for para in doc.paragraphs:
-        if para.style.name.startswith("Heading"):
-            level = int(para.style.name[7:].strip())
+    for para in paragraphs:
+        text_elems = para.findall(".//w:t", ns)
+        para_text = "".join([t.text for t in text_elems])
+
+        level = parse_level(para)
+        if level is not None:
             heading_stack = heading_stack[:level-1]
-            heading_rank, heading_text = match_and_split_heading(para.text)
+            heading_rank, heading_text = match_and_split_heading(para_text)
             if heading_rank is None:
-                print("Parse Heading Error: ", para.text)
+                print("Parse Heading Error: ", para_text)
             heading_stack.append((level, heading_text))
         else:
-            if len(heading_stack) > 0 and len(para.text) > 0:
+            if len(heading_stack) > 0 and len(para_text) > 0:
                 key = "#".join([x[1] for x in heading_stack])
                 if key not in doc_tree:
                     doc_tree[key] = ""
-                doc_tree[key] += postprocess(para.text)
+                doc_tree[key] += postprocess(para_text)
     return doc_tree
 
 
@@ -138,7 +190,8 @@ def split_txt_by_heading(contents, min_sentence_len=2, max_heading_len=20):
 def split_by_heading(filename, min_sentence_len=2):
     file_format = filename.split(".")[-1]
     if file_format == "docx":
-        return split_docx_by_heading(filename, min_sentence_len=min_sentence_len)
+        # return split_docx_by_heading(filename, min_sentence_len=min_sentence_len)
+        return split_docx_from_xml(filename, min_sentence_len=min_sentence_len)
     elif file_format == "txt":
         with open(filename, "r", encoding="utf-8") as fin:
             contents = fin.readlines()
