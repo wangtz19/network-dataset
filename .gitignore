@@ -4,7 +4,7 @@ img/
 pdf/
 liantongzhidao*
 *.log
-.openai-key
+.openai-key*
 data/
 book/
 rfc/

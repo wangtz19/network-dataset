@@ -8,6 +8,8 @@ from tqdm import tqdm
 import opencc
 import zipfile
 import xml.etree.ElementTree as ET
+import fitz
+from loader import pdf_to_txt
 
 
 chinese_num = "零一二三四五六七八九十"
@@ -187,11 +189,68 @@ def split_txt_by_heading(contents, min_sentence_len=2, max_heading_len=20):
     return doc_tree
 
 
+def check_heading_match(heading_text, paragraphs, start_idx):
+    heading_text = heading_text.replace(" ", "")
+    paragraph = paragraphs[start_idx].replace(" ", "")
+    if heading_text == paragraph:
+        return True, start_idx
+    if heading_text.startswith(paragraph) and start_idx+1 < len(paragraphs):
+        heading_text = heading_text[len(paragraph):]
+        return check_heading_match(heading_text, paragraphs, start_idx+1)
+    return False, start_idx
+
+
+def split_pdf_by_heading(filename):
+    doc = fitz.open(filename)
+    tocs = doc.get_toc()
+    paragraphs = "".join(page.get_text() for page in doc).split("\n")
+    doc_tree = {}
+    heading_stack = []
+    outline_idx, para_idx = 0, 0
+
+    while para_idx < len(paragraphs):
+        paragraph = paragraphs[para_idx]
+        if outline_idx < len(tocs):
+            outline_level, outline_text = tocs[outline_idx][:2]
+            is_match, start_idx = check_heading_match(outline_text, paragraphs, para_idx)
+        else:
+            is_match = False
+        if is_match:
+            outline_idx += 1
+            para_idx = start_idx
+            level = int(outline_level)
+            heading_stack = heading_stack[:level-1]
+            heading_rank, heading_text = match_and_split_heading(outline_text)
+            if heading_rank is None:
+                print("Parse Heading Error: ", paragraph)
+            heading_stack.append((level, heading_text))
+        else:
+            if len(heading_stack) > 0 and len(paragraph) > 0:
+                key = "#".join([x[1] for x in heading_stack])
+                if key not in doc_tree:
+                    doc_tree[key] = ""
+                doc_tree[key] += postprocess(paragraph)
+        para_idx += 1
+    return doc_tree
+
+
 def split_by_heading(filename, min_sentence_len=2):
     file_format = filename.split(".")[-1]
     if file_format == "docx":
         # return split_docx_by_heading(filename, min_sentence_len=min_sentence_len)
-        return split_docx_from_xml(filename, min_sentence_len=min_sentence_len)
+        doc_tree = split_docx_from_xml(filename, min_sentence_len=min_sentence_len)
+        if len(doc_tree) == 0:
+            # split from xml failed, try to convert to txt and split again
+            txt_contents = pypandoc.convert_file(filename, 'plain').split("\n")
+            doc_tree = split_txt_by_heading(txt_contents, min_sentence_len=min_sentence_len)
+        return doc_tree
+    elif file_format == "pdf":
+        doc_tree = split_pdf_by_heading(filename)
+        if len(doc_tree) == 0:
+            tmp_filename = pdf_to_txt(filename)
+            with open(tmp_filename, "r", encoding="utf-8") as fin:
+                txt_contents = fin.readlines()
+            doc_tree = split_txt_by_heading(txt_contents, min_sentence_len=min_sentence_len)
     elif file_format == "txt":
         with open(filename, "r", encoding="utf-8") as fin:
             contents = fin.readlines()
@@ -203,10 +262,6 @@ def split_by_heading(filename, min_sentence_len=2):
 def doc_to_csv(input_filename, output_filename=None, save_local=True):
     input_format = input_filename.split(".")[-1]
     doc_tree = split_by_heading(input_filename)
-    if len(doc_tree) == 0 and input_format == "docx":
-        # split from docx failed, try to convert to txt and split again
-        txt_contents = pypandoc.convert_file(input_filename, 'plain').split("\n")
-        doc_tree = split_txt_by_heading(txt_contents)
     
     # to csv, key is summary, value is content
     df = pd.DataFrame(doc_tree.items(), columns=["summary", "content"])
@@ -225,7 +280,6 @@ def doc_to_csv(input_filename, output_filename=None, save_local=True):
 
 
 supported_formats = ["docx", "txt", "pdf"]
-from loader import pdf_to_txt
 
 def doc_to_csv_batch(input_dir, output_dir=None, save_local=True):
     if output_dir is None:
@@ -235,12 +289,7 @@ def doc_to_csv_batch(input_dir, output_dir=None, save_local=True):
     for root, dirs, files in os.walk(input_dir):
         for filename in tqdm(files):
             if filename.split(".")[-1] in supported_formats:
-                if filename.split(".")[-1] == "pdf":
-                    input_filename = os.path.join(root, filename)
-                    tmp_txt = pdf_to_txt(input_filename, dir_path="tmp_files")
-                    input_filename = tmp_txt
-                else:
-                    input_filename = os.path.join(root, filename)
+                input_filename = os.path.join(root, filename)
                 output_filename = os.path.join(output_dir, filename + ".csv")
                 tmp_df = doc_to_csv(input_filename, output_filename, save_local=save_local)
                 total_df = pd.concat([total_df, tmp_df], axis=0)
