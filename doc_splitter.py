@@ -10,6 +10,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 import fitz
 from loader import pdf_to_txt
+import json
 
 
 chinese_num = "零一二三四五六七八九十"
@@ -20,7 +21,7 @@ pattern_list = [
     r"^\d+\s*[、\)〕）]\s*", # 1、1)
     r"^[（\(〔]\d+[）\)〕]", # （1）(1) 〔1〕
     r"^\d+(\.\d+)+\s*", # 1.2.3
-    r"^\d+(-\d+)*\s+", # 1-1, 1-1-1, 1-1-1-1 ... 
+    r"^\d+(-\d+)*\s*", # 1-1, 1-1-1, 1-1-1-1 ... 
     r"^第\s*[%s\d]+\s*章\s*" % chinese_num, # 第1章
     r"^_*\d+\s*[．\.]\s+", # 1．1. 
 ]
@@ -296,3 +297,88 @@ def doc_to_csv_batch(input_dir, output_dir=None, save_local=True):
     if save_local:
         total_df.to_csv(os.path.join(output_dir, "total.csv"), index=False, encoding="utf-8")
     return total_df
+
+
+def check_heading_match_qa(heading_text, paragraphs, start_idx, if_first=True):
+    heading_text = heading_text.replace(" ", "")
+    paragraph = paragraphs[start_idx].replace(" ", "")
+    if paragraph == heading_text:
+        res = "Equal" if if_first else "Contain"
+        print(res, heading_text, paragraph)
+        return res, start_idx
+    if paragraph.startswith(heading_text):
+        print("Contain", heading_text, paragraph)
+        return "Contain", start_idx
+    if heading_text.startswith(paragraph) and start_idx+1 < len(paragraphs):
+        heading_text = heading_text[len(paragraph):]
+        return check_heading_match(heading_text, paragraphs, start_idx+1, if_first=False)
+    print("Fail", heading_text, paragraph)
+    return "Fail", start_idx
+
+
+def split_pdf_by_heading_qa(filename):
+    doc = fitz.open(filename)
+    tocs = doc.get_toc()
+    paragraphs = "".join(page.get_text() for page in doc).replace("\xad", "-").replace("\xa0", "").split("\n")
+    doc_tree = {}
+    heading_stack = []
+    outline_idx, para_idx = 0, 0
+
+    while para_idx < len(paragraphs):
+        paragraph = paragraphs[para_idx]
+        if outline_idx < len(tocs):
+            outline_level, outline_text = tocs[outline_idx][:2]
+            is_match, start_idx = check_heading_match(outline_text, paragraphs, para_idx)
+        else:
+            is_match = "Fail"
+        if is_match in ["Equal", "Contain"]:
+            outline_idx += 1
+            para_idx = start_idx
+            level = int(outline_level)
+            heading_stack = heading_stack[:level-1]
+            heading_rank, heading_text = match_and_split_heading(paragraph)
+            if heading_rank is None:
+                print("Parse Heading Error: ", paragraph)
+                heading_stack.append((level, outline_text))
+                key = "#".join([x[1] for x in heading_stack])
+                if key not in doc_tree:
+                    doc_tree[key] = ""
+                doc_tree[key] += postprocess(heading_text) + "\n"
+            elif is_match == "Equal":
+                heading_stack.append((level, heading_text))
+            elif is_match == "Contain":
+                heading_stack.append((level, heading_rank))
+                key = "#".join([x[1] for x in heading_stack])
+                if key not in doc_tree:
+                    doc_tree[key] = ""
+                doc_tree[key] += postprocess(heading_text) + "\n"
+        else:
+            if len(heading_stack) > 0 and len(paragraph) > 0:
+                key = "#".join([x[1] for x in heading_stack])
+                if key not in doc_tree:
+                    doc_tree[key] = ""
+                doc_tree[key] += postprocess(paragraph) + "\n"
+        para_idx += 1
+    return doc_tree
+
+
+def split_qa(doc_tree, output_filename):
+    with open(output_filename, "w", encoding="utf-8") as fout:
+        for key, value in doc_tree.items():
+            value_list = value.split("\n")
+            for idx in range(len(value_list)):
+                found = False
+                if value_list[idx].strip().startswith("答：") or value_list[idx].strip().startswith("解答："):
+                    fout.write(json.dumps({
+                            "instruction": key,
+                            "question": "".join(value_list[:idx]),
+                            "answer": "".join(value_list[idx:])
+                        }, ensure_ascii=False) + "\n")
+                    found = True
+                    break
+            if not found:
+                fout.write(json.dumps({
+                        "instruction": key,
+                        "question": "".join(value_list),
+                        "answer": ""
+                    }, ensure_ascii=False) + "\n")
