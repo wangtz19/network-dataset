@@ -9,8 +9,9 @@ import opencc
 import zipfile
 import xml.etree.ElementTree as ET
 import fitz
-from loader import pdf_to_txt
+from doc_loader import pdf_to_txt
 import json
+import argparse
 
 
 chinese_num = "零一二三四五六七八九十"
@@ -383,3 +384,33 @@ def split_qa(doc_tree, output_filename):
                         "question": "".join(value_list),
                         "answer": ""
                     }, ensure_ascii=False) + "\n")
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--input", type=str, default=None, help=f"input filename, {supported_formats} formats are supported")
+parser.add_argument("--output", type=str, default=None, help="output filename")
+parser.add_argument("--input_dir", type=str, default=None, help=f"input directory, {supported_formats} files in this directory will be processed")
+parser.add_argument("--output_dir", type=str, default=None, help="output directory")
+parser.add_argument("--mode", type=str, default="normal", choices=["normal", "qa"], help="normal mode or qa mode")
+parser.add_argument("--min_sentence_len", type=int, default=2, help="minimum sentence length")
+parser.add_argument("--save_local", action="store_true", help="save intermedium files to local or not")
+
+
+def main():
+    args = parser.parse_args()
+    assert args.input is not None or args.input_dir is not None, "input or input_dir must be specified"
+    if args.mode == "normal":
+        if args.input is not None:
+            doc_to_csv(args.input, args.output, save_local=True)
+        else:
+            doc_to_csv_batch(args.input_dir, args.output_dir, save_local=True)
+    elif args.mode == "qa":
+        assert args.input is not None, "input must be specified in qa mode"
+        if args.output is None:
+            args.output = args.input + ".jsonl"
+        doc_tree = split_pdf_by_heading_qa(args.input) # TODO: support other formats
+        split_qa(doc_tree, args.output)
+
+
+if __name__ == "__main__":
+    main()
