@@ -190,6 +190,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--input", type=str, required=True, help="input csv filename")
 parser.add_argument("--model", type=str, default="gpt", help="model name, `davinci` or `gpt`")
 parser.add_argument("--proxy", type=str, default=None, help="proxy address")
+parser.add_argument("--key_path", type=str, default=".openai-key2", help="openai key path")
 
 
 def main():
@@ -200,7 +201,7 @@ def main():
     else:
         set_proxy()
     assert test_proxy(), "proxy is not working"
-    set_openai_key()
+    set_openai_key(args.key_path)
 
     save_filename = gen_qa(args.input, model=args.model)
     save_filename = split_qa(save_filename)
