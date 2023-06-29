@@ -252,6 +252,7 @@ def split_by_heading(filename, min_sentence_len=2):
             with open(tmp_filename, "r", encoding="utf-8") as fin:
                 txt_contents = fin.readlines()
             doc_tree = split_txt_by_heading(txt_contents, min_sentence_len=min_sentence_len)
+        return doc_tree
     elif file_format == "txt":
         with open(filename, "r", encoding="utf-8") as fin:
             contents = fin.readlines()
