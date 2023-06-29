@@ -69,3 +69,7 @@ def main():
     save_filename = evalute_qa(args.input)
     save_filename = split_qa(save_filename, aspect_list)
     filter_qa(save_filename)
+
+
+if __name__ == "__main__":
+    main()

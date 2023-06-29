@@ -205,3 +205,7 @@ def main():
     save_filename = gen_qa(args.input, model=args.model)
     save_filename = split_qa(save_filename)
     filter_qa(save_filename)
+
+
+if __name__ == "__main__":
+    main()
