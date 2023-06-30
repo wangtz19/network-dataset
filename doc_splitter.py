@@ -318,7 +318,7 @@ def check_heading_match_qa(heading_text, paragraphs, start_idx, if_first=True):
         return "Contain", start_idx
     if heading_text.startswith(paragraph) and start_idx+1 < len(paragraphs):
         heading_text = heading_text[len(paragraph):]
-        return check_heading_match(heading_text, paragraphs, start_idx+1, if_first=False)
+        return check_heading_match_qa(heading_text, paragraphs, start_idx+1, if_first=False)
     # print("Fail", heading_text, paragraph)
     return "Fail", start_idx
 
@@ -335,7 +335,7 @@ def split_pdf_by_heading_qa(filename):
         paragraph = paragraphs[para_idx]
         if outline_idx < len(tocs):
             outline_level, outline_text = tocs[outline_idx][:2]
-            is_match, start_idx = check_heading_match(outline_text, paragraphs, para_idx)
+            is_match, start_idx = check_heading_match_qa(outline_text, paragraphs, para_idx)
         else:
             is_match = "Fail"
         if is_match in ["Equal", "Contain"]:
