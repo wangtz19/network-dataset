@@ -14,6 +14,9 @@ import json
 import argparse
 
 
+tqdm.pandas()
+
+
 chinese_num = "零一二三四五六七八九十"
 pattern_list = [
     r"^[%s]\s*[、\.]" % chinese_num, # 一、 一.
@@ -301,20 +304,22 @@ def doc_to_csv_batch(input_dir, output_dir=None, save_local=True):
     return total_df
 
 
+## QA mode
+
 def check_heading_match_qa(heading_text, paragraphs, start_idx, if_first=True):
     heading_text = heading_text.replace(" ", "")
     paragraph = paragraphs[start_idx].replace(" ", "")
     if paragraph == heading_text:
         res = "Equal" if if_first else "Contain"
-        print(res, heading_text, paragraph)
+        # print(res, heading_text, paragraph)
         return res, start_idx
     if paragraph.startswith(heading_text):
-        print("Contain", heading_text, paragraph)
+        # print("Contain", heading_text, paragraph)
         return "Contain", start_idx
     if heading_text.startswith(paragraph) and start_idx+1 < len(paragraphs):
         heading_text = heading_text[len(paragraph):]
         return check_heading_match(heading_text, paragraphs, start_idx+1, if_first=False)
-    print("Fail", heading_text, paragraph)
+    # print("Fail", heading_text, paragraph)
     return "Fail", start_idx
 
 
@@ -365,25 +370,57 @@ def split_pdf_by_heading_qa(filename):
 
 
 def split_qa(doc_tree, output_filename):
-    with open(output_filename, "w", encoding="utf-8") as fout:
-        for key, value in doc_tree.items():
-            value_list = value.split("\n")
-            for idx in range(len(value_list)):
-                found = False
-                if value_list[idx].strip().startswith("答：") or value_list[idx].strip().startswith("解答："):
-                    fout.write(json.dumps({
-                            "instruction": key,
-                            "question": "".join(value_list[:idx]),
-                            "answer": "".join(value_list[idx:])
-                        }, ensure_ascii=False) + "\n")
-                    found = True
-                    break
-            if not found:
-                fout.write(json.dumps({
-                        "instruction": key,
-                        "question": "".join(value_list),
-                        "answer": ""
-                    }, ensure_ascii=False) + "\n")
+    # with open(output_filename, "w", encoding="utf-8") as fout:
+    qa_dict = {
+        "instruction": [],
+        "question": [],
+        "answer": []
+    }
+    for key, value in doc_tree.items():
+        value_list = value.split("\n")
+        for idx in range(len(value_list)):
+            found = False
+            if value_list[idx].strip().startswith("答：") or value_list[idx].strip().startswith("解答："):
+                # fout.write(json.dumps({
+                #         "instruction": key,
+                #         "question": "".join(value_list[:idx]),
+                #         "answer": "".join(value_list[idx:])
+                #     }, ensure_ascii=False) + "\n")
+                qa_dict["instruction"].append(key)
+                qa_dict["question"].append("".join(value_list[:idx]))
+                qa_dict["answer"].append("".join(value_list[idx:]))
+                found = True
+                break
+        if not found:
+            # fout.write(json.dumps({
+            #         "instruction": key,
+            #         "question": "".join(value_list),
+            #         "answer": ""
+            #     }, ensure_ascii=False) + "\n")
+            qa_dict["instruction"].append(key)
+            qa_dict["question"].append("".join(value_list))
+            qa_dict["answer"].append("")
+    pd.DataFrame(qa_dict).to_csv(output_filename, index=False, encoding="utf-8")
+
+
+def filter_qa(csv_filename, output_format="csv"):
+    df = pd.read_csv(csv_filename)
+    # remove qa pairs without answer
+    df = df[df.answer.str.len() > 0]
+
+    # TODO other filters
+
+    # convert traditional chinese to simplified chinese
+    df.question = df.question.progress_apply(lambda x: converter.convert(x))
+    df.answer = df.answer.progress_apply(lambda x: converter.convert(x))
+
+    # save filtered qa
+    if output_format == "csv":
+        save_filename = csv_filename.replace(".csv", "-filtered.csv")
+        df.to_csv(save_filename, index=False)
+    else:
+        save_filename = csv_filename.replace(".csv", "-filtered.jsonl")
+        df.to_json(save_filename, orient="records", lines=True, force_ascii=False)
 
 
 parser = argparse.ArgumentParser()
@@ -393,7 +430,8 @@ parser.add_argument("--input_dir", type=str, default=None, help=f"input director
 parser.add_argument("--output_dir", type=str, default=None, help="output directory")
 parser.add_argument("--mode", type=str, default="normal", choices=["normal", "qa"], help="normal mode or qa mode")
 parser.add_argument("--min_sentence_len", type=int, default=2, help="minimum sentence length")
-parser.add_argument("--save_local", action="store_true", help="save intermedium files to local or not")
+parser.add_argument("--save_local", action="store_true", help="save intermediate files to local or not")
+parser.add_argument("--output_format", type=str, default="csv", help="output format, `csv` or `jsonl`")
 
 
 def main():
@@ -406,10 +444,11 @@ def main():
             doc_to_csv_batch(args.input_dir, args.output_dir, save_local=True)
     elif args.mode == "qa":
         assert args.input is not None, "input must be specified in qa mode"
-        if args.output is None:
-            args.output = args.input + ".jsonl"
+        input_format = args.input.split(".")[-1]
         doc_tree = split_pdf_by_heading_qa(args.input) # TODO: support other formats
-        split_qa(doc_tree, args.output)
+        inter_filename = args.input.replace(f".{input_format}", f"-qa.csv") 
+        split_qa(doc_tree, inter_filename)
+        filter_qa(inter_filename, output_format=args.output_format)
 
 
 if __name__ == "__main__":

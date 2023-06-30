@@ -7,18 +7,22 @@ import time
 import re
 import argparse
 from utils import set_proxy, test_proxy, set_openai_key
+from tqdm import tqdm
+
+
+tqdm.pandas()
 
 
 QUESTION_PROMPT = "请根据以下文本生成问题，尽可能使用简体中文，问题表述需要清晰详细\n\n文本: {context}\n\n问题:\n1."
 ANSWER_PROMPT = "根据以下文本生成问题的答案，尽可能使用简体中文\n\n文本: {context}\n\n问题:\n{questions}\n\n答案:\n1."
 
 
-def gen_questions_by_davinci(context, max_tokens=500):
+def gen_questions_by_davinci(row, max_tokens=500):
     try:
         response = openai.Completion.create(
             # engine="davinci-instruct-beta-v3",
             engine="text-davinci-003",
-            prompt=QUESTION_PROMPT.format(context=context),
+            prompt=QUESTION_PROMPT.format(context=row.context),
             temperature=0,
             max_tokens=max_tokens,
             top_p=1,
@@ -32,14 +36,14 @@ def gen_questions_by_davinci(context, max_tokens=500):
         return ""
 
 
-def gen_questions_by_chat(context, max_tokens=500):
+def gen_questions_by_chat(row, max_tokens=500):
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {
                     "role": "user",
-                    "content": QUESTION_PROMPT.format(context=context)
+                    "content": QUESTION_PROMPT.format(context=row.context)
                 }
             ],
             temperature=0,
@@ -96,7 +100,7 @@ def gen_answers_by_chat(row, max_tokens=500):
         return ""
     
 
-def gen_qa(csv_filename, model="gpt"):
+def gen_qa(csv_filename, model="gpt", answer_only=False):
     df = pd.read_csv(csv_filename)
     # check fields
     if "context" not in df.columns:
@@ -104,24 +108,27 @@ def gen_qa(csv_filename, model="gpt"):
             "csv file must contain 'context', or both 'summary' and 'content' fields"
         df["context"] = "summary: " +  df.summary + "\n" +  "content: " + df.content
     
-    # generate questions based on context
-    start_time = time.time()
-    if model == "davinci":
-        df["questions"] = df.context.apply(gen_questions_by_davinci)
-    else:
-        df["questions"] = df.context.apply(gen_questions_by_chat)
-    df["questions"] = "1." + df.questions
-    print("generate questions time: ", time.time() - start_time)
+    if not answer_only:
+        # generate questions based on context
+        logging.info("generate questions...")
+        start_time = time.time()
+        if model == "davinci":
+            df["questions"] = df.progress_apply(gen_questions_by_davinci, axis=1)
+        else:
+            df["questions"] = df.progress_apply(gen_questions_by_chat, axis=1)
+        df["questions"] = "1." + df.questions
+        print("generate questions time: ", time.time() - start_time)
 
-    # save intermediate result
-    df.to_csv(csv_filename.replace(".csv", "-questions.csv"), index=False)
+        # save intermediate result
+        df.to_csv(csv_filename.replace(".csv", "-questions.csv"), index=False)
 
     # generate answers based on context and questions
+    logging.info("generate answers...")
     start_time = time.time()
     if model == "davinci":
-        df["answers"] = df.apply(gen_answers_by_davinci, axis=1)
+        df["answers"] = df.progress_apply(gen_answers_by_davinci, axis=1)
     else:
-        df["answers"] = df.apply(gen_answers_by_chat, axis=1)
+        df["answers"] = df.progress_apply(gen_answers_by_chat, axis=1)
     df["answers"] = "1." + df.answers
     print("generate answers time: ", time.time() - start_time)
 
@@ -159,7 +166,8 @@ def split_qa(csv_filename, aspect_list=[]):
     return save_filename
 
 
-def filter_qa(csv_filename, min_len = 10, max_len = 300):
+def filter_qa(csv_filename, min_len = 10, max_len = 300, output_format="csv"):
+    qa_df = pd.read_csv(csv_filename)
     # filter qa pairs
     print("before filter: ", qa_df.shape)
     # remove too short or too long qa pairs
@@ -181,8 +189,12 @@ def filter_qa(csv_filename, min_len = 10, max_len = 300):
     qa_df.answer = qa_df.answer.apply(lambda x: converter.convert(x))
 
     # save filtered qa
-    save_filename = csv_filename.replace(".csv", "-filtered.csv")
-    qa_df.to_csv(save_filename, index=False)
+    if output_format == "csv":
+        save_filename = csv_filename.replace(".csv", "-filtered.csv")
+        qa_df.to_csv(save_filename, index=False)
+    else:
+        save_filename = csv_filename.replace(".csv", "-filtered.jsonl")
+        qa_df.to_json(save_filename, orient="records", lines=True, force_ascii=False)
     return save_filename
 
 
@@ -191,6 +203,8 @@ parser.add_argument("--input", type=str, required=True, help="input csv filename
 parser.add_argument("--model", type=str, default="gpt", help="model name, `davinci` or `gpt`")
 parser.add_argument("--proxy", type=str, default=None, help="proxy address")
 parser.add_argument("--key_path", type=str, default=".openai-key2", help="openai key path")
+parser.add_argument("--answer_only", action="store_true", help="only generate answers")
+parser.add_argument("--output_format", type=str, default="csv", help="output format, `csv` or `jsonl`")
 
 
 def main():
@@ -203,9 +217,9 @@ def main():
     assert test_proxy(), "proxy is not working"
     set_openai_key(args.key_path)
 
-    save_filename = gen_qa(args.input, model=args.model)
+    save_filename = gen_qa(args.input, model=args.model, answer_only=args.answer_only)
     save_filename = split_qa(save_filename)
-    filter_qa(save_filename)
+    filter_qa(save_filename, output_format=args.output_format)
 
 
 if __name__ == "__main__":

@@ -55,6 +55,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--input", type=str, required=True, help="input csv filename")
 parser.add_argument("--proxy", type=str, default=None, help="proxy address")
 parser.add_argument("--key_path", type=str, default=".openai-key2", help="openai key path")
+parser.add_argument("--output_format", type=str, default="csv", help="output format, `csv` or `jsonl`")
 
 
 def main():
@@ -69,7 +70,7 @@ def main():
 
     save_filename = evalute_qa(args.input)
     save_filename = split_qa(save_filename, aspect_list)
-    filter_qa(save_filename)
+    filter_qa(save_filename, output_format=args.output_format)
 
 
 if __name__ == "__main__":
