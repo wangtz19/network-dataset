@@ -8,6 +8,7 @@ import re
 import argparse
 from utils import set_proxy, test_proxy, set_openai_key
 from tqdm import tqdm
+from text2vec import Similarity
 
 
 tqdm.pandas()
@@ -166,7 +167,10 @@ def split_qa(csv_filename, aspect_list=[]):
     return save_filename
 
 
-def filter_qa(csv_filename, min_len = 10, max_len = 300, output_format="csv"):
+sim_model = Similarity()
+
+
+def filter_qa(csv_filename, min_len = 10, max_len = 300, output_format="csv", sim_threshold=0.9):
     qa_df = pd.read_csv(csv_filename)
     # filter qa pairs
     print("before filter: ", qa_df.shape)
@@ -183,6 +187,9 @@ def filter_qa(csv_filename, min_len = 10, max_len = 300, output_format="csv"):
     # remove duplicated qa pairs
     qa_df = qa_df.drop_duplicates(subset=["question", "answer"])
     print("after duplicate filter: ", qa_df.shape)
+    # remove qa pairs with high similarity
+    qa_df["similarity"] = qa_df.progress_apply(lambda x: sim_model(x.question, x.answer), axis=1)
+    qa_df = qa_df[qa_df.similarity < sim_threshold]
 
     # convert traditional chinese to simplified chinese
     qa_df.question = qa_df.question.apply(lambda x: converter.convert(x))
