@@ -168,9 +168,15 @@ def split_qa(csv_filename, aspect_list=[]):
 
 
 sim_model = Similarity()
+chinese_num = "零一二三四五六七八九十"
+filter_pattern_list = {
+    r"图[%s\d]+" % chinese_num,
+    r"表[%s\d]+" % chinese_num,
+}
+filter_pattern = re.compile("|".join(filter_pattern_list))
 
 
-def filter_qa(csv_filename, min_len = 10, max_len = 300, output_format="csv", sim_threshold=0.9):
+def filter_qa(csv_filename, min_len = 10, max_len = 300, output_format="csv", sim_threshold=0.84):
     qa_df = pd.read_csv(csv_filename)
     # filter qa pairs
     print("before filter: ", qa_df.shape)
@@ -184,16 +190,30 @@ def filter_qa(csv_filename, min_len = 10, max_len = 300, output_format="csv", si
     # remove answers not end with period
     qa_df = qa_df[qa_df.answer.str.endswith("。")]
     print("after period filter: ", qa_df.shape)
+
+    # remove key words representsing figures or tables
+    drop_indice = []
+    for idx, row in qa_df.iterrows():
+        if filter_pattern.search(row.question) or filter_pattern.search(row.answer):
+            drop_indice.append(idx)
+            print(row.question, row.answer)
+    qa_df = qa_df.drop(drop_indice)
+    print("after figure and table filter: ", qa_df.shape)
+
     # remove duplicated qa pairs
     qa_df = qa_df.drop_duplicates(subset=["question", "answer"])
     print("after duplicate filter: ", qa_df.shape)
     # remove qa pairs with high similarity
     qa_df["similarity"] = qa_df.progress_apply(lambda x: sim_model(x.question, x.answer), axis=1)
     qa_df = qa_df[qa_df.similarity < sim_threshold]
+    print("after similarity filter: ", qa_df.shape)
 
     # convert traditional chinese to simplified chinese
     qa_df.question = qa_df.question.apply(lambda x: converter.convert(x))
     qa_df.answer = qa_df.answer.apply(lambda x: converter.convert(x))
+
+    # rename columns
+    qa_df = qa_df.rename(columns={"question": "prompt", "answer": "completion"})
 
     # save filtered qa
     if output_format == "csv":
