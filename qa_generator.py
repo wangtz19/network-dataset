@@ -9,6 +9,8 @@ import argparse
 from utils import set_proxy, test_proxy, set_openai_key
 from tqdm import tqdm
 from text2vec import Similarity
+from rouge_chinese import Rouge
+import jieba
 
 
 tqdm.pandas()
@@ -168,15 +170,34 @@ def split_qa(csv_filename, aspect_list=[]):
 
 
 sim_model = Similarity()
+rouge = Rouge()
 chinese_num = "零一二三四五六七八九十"
-filter_pattern_list = {
+filter_pattern_list = [
     r"图[%s\d]+" % chinese_num,
     r"表[%s\d]+" % chinese_num,
-}
+    r"第.*[节章]",
+    r"本节的内容",
+    r"本章的内容",
+    r"这篇文档",
+    r"本文档",
+    r"参考文献",
+    r"参考资料",
+    r"章节",
+    r"这个文档",
+    r"本[章节]",
+    r"这[篇段]文本",
+]
 filter_pattern = re.compile("|".join(filter_pattern_list))
+sub_rules = {
+    "www.aidaan.cn": "",
+    "爱答案习题答案课件资源网": "",
+    "韶关学院信息工程学院骆耀祖整理": "",
+    
+}
 
 
-def filter_qa(csv_filename, min_len = 10, max_len = 300, output_format="csv", sim_threshold=0.84):
+def filter_qa(csv_filename, min_len = 10, max_len = 300, output_format="csv", 
+              sim_upper=0.84, rouge_upper=0.75, rouge_lower=0.4):
     qa_df = pd.read_csv(csv_filename)
     # filter qa pairs
     print("before filter: ", qa_df.shape)
@@ -196,17 +217,31 @@ def filter_qa(csv_filename, min_len = 10, max_len = 300, output_format="csv", si
     for idx, row in qa_df.iterrows():
         if filter_pattern.search(row.question) or filter_pattern.search(row.answer):
             drop_indice.append(idx)
-            print(row.question, row.answer)
+        else:
+            for k, v in sub_rules.items():
+                row.question = row.question.replace(k, v)
+                row.answer = row.answer.replace(k, v)
+            qa_df.loc[idx] = row
     qa_df = qa_df.drop(drop_indice)
-    print("after figure and table filter: ", qa_df.shape)
+    print("after key word filter: ", qa_df.shape)
 
     # remove duplicated qa pairs
     qa_df = qa_df.drop_duplicates(subset=["question", "answer"])
     print("after duplicate filter: ", qa_df.shape)
-    # remove qa pairs with high similarity
+    
     qa_df["similarity"] = qa_df.progress_apply(lambda x: sim_model(x.question, x.answer), axis=1)
-    qa_df = qa_df[qa_df.similarity < sim_threshold]
+    qa_df["rouge"] = qa_df.progress_apply(lambda x: rouge.get_scores(" ".join(jieba.lcut(x.question)), 
+                        " ".join(jieba.lcut(x.answer)))[0]["rouge-l"]["f"], axis=1)
+    
+    # remove qa pairs with high similarity
+    qa_df1 = qa_df[qa_df.similarity < sim_upper]
+    qa_df2 = qa_df[(qa_df.similarity >= sim_upper) & (qa_df.similarity < 0.9) & (qa_df.rouge < rouge_lower)]
+    qa_df = pd.concat([qa_df2, qa_df1])
     print("after similarity filter: ", qa_df.shape)
+
+    # remove qa pairs with high rouge score
+    qa_df = qa_df[qa_df.rouge < rouge_upper]
+    print("after rouge filter: ", qa_df.shape)
 
     # convert traditional chinese to simplified chinese
     qa_df.question = qa_df.question.apply(lambda x: converter.convert(x))
