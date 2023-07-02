@@ -229,7 +229,7 @@ def filter_qa(csv_filename, min_len = 10, max_len = 300, output_format="csv",
     qa_df = qa_df.drop_duplicates(subset=["question", "answer"])
     print("after duplicate filter: ", qa_df.shape)
     
-    qa_df["similarity"] = qa_df.progress_apply(lambda x: sim_model(x.question, x.answer), axis=1)
+    qa_df["similarity"] = qa_df.progress_apply(lambda x: sim_model.get_score(x.question, x.answer), axis=1)
     qa_df["rouge"] = qa_df.progress_apply(lambda x: rouge.get_scores(" ".join(jieba.lcut(x.question)), 
                         " ".join(jieba.lcut(x.answer)))[0]["rouge-l"]["f"], axis=1)
     
