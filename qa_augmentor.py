@@ -8,6 +8,7 @@ from utils import set_proxy, test_proxy, set_openai_key
 from tqdm import tqdm
 import json
 import random
+from qa_generator import filter_qa
 
 
 tqdm.pandas()
@@ -105,12 +106,9 @@ def main():
             "or (question and answer) columns"
         df.rename(columns={"prompt": "question", "completion": "answer"}, inplace=True)
     new_df = aug_questions(df)
-    output_path = args.input.replace(".csv", "-aug."+args.output_format)
-    if args.output_format == "csv":
-        new_df.to_csv(args.output_file, index=False)
-    else:
-        new_df.to_json(output_path, orient="records", lines=True,
-                       force_ascii=False)
+    tmp_path = args.input.replace(".csv", "-aug."+args.output_format)
+    new_df.to_csv(tmp_path, index=False)
+    filter_qa(tmp_path, output_format=args.output_format)
         
 
 if __name__ == "__main__":
