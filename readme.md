@@ -67,3 +67,19 @@ python qa_evaluator.py
 --proxy <proxy>
 --key_path <key_path>
 ```  
+
+### Augment Question
+```
+usage: python qa_augmentor.py [-h] --input INPUT [--output_format OUTPUT_FORMAT] [--proxy PROXY] [--key_path KEY_PATH]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --input INPUT, -i INPUT
+                        csv input file path
+  --output_format OUTPUT_FORMAT, -o OUTPUT_FORMAT
+                        output file format, csv or jsonl
+  --proxy PROXY, -p PROXY
+                        proxy address
+  --key_path KEY_PATH, -k KEY_PATH
+                        openai key path
+```
