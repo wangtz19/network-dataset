@@ -197,7 +197,8 @@ sub_rules = {
 
 
 def filter_qa(csv_filename, min_len = 10, max_len = 300, output_format="csv", 
-              sim_upper=0.84, rouge_upper=0.75, rouge_lower=0.4):
+              sim_upper=0.84, rouge_upper=0.75, rouge_lower=0.4,
+              to_prompt=True):
     qa_df = pd.read_csv(csv_filename)
     # filter qa pairs
     print("before filter: ", qa_df.shape)
@@ -247,8 +248,9 @@ def filter_qa(csv_filename, min_len = 10, max_len = 300, output_format="csv",
     qa_df.question = qa_df.question.apply(lambda x: converter.convert(x))
     qa_df.answer = qa_df.answer.apply(lambda x: converter.convert(x))
 
-    # rename columns
-    qa_df = qa_df.rename(columns={"question": "prompt", "answer": "completion"})
+    if to_prompt:
+        # rename columns
+        qa_df = qa_df.rename(columns={"question": "prompt", "answer": "completion"})
 
     # save filtered qa
     if output_format == "csv":

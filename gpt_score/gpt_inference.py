@@ -31,10 +31,10 @@ class GPT3Model(object):
         if i == 0:
             i = i + 1
 
-        print('eval text', out['logprobs']['tokens'][i: -1])
+        # print('eval text', out['logprobs']['tokens'][i: -1])
         loss = -sum(out['logprobs']["token_logprobs"][i:-1]) # ignore the last '.'
         avg_loss = loss / (len(out['logprobs']['text_offset']) - i-1) # 1 is the last '.'
-        print('avg_loss: ', avg_loss)
+        # print('avg_loss: ', avg_loss)
         losses.append(avg_loss)
 
         return avg_loss
@@ -53,7 +53,7 @@ class GPT3Model(object):
                                                 echo=echo,
                                                 stop='\n',
                                                 n=n)
-            print('prompt: ',prompt)
+            # print('prompt: ',prompt)
             # received = True
         except:
             error = sys.exc_info()[0]
