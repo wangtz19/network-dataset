@@ -32,9 +32,7 @@ We evaluate our generated QA pairs in 2 ways:
 1.  [GPTScore](https://arxiv.org/abs/2302.04166)
 
     Given the task description $d$, the raw context text $S$, the generated question $q$ and corresponding generated answer $a=\{a_1,a_2,\cdots,a_m\}$, we calculate the following conditional probability:
-    $$
-    \textrm{GPTScore}(a|d,q,S) = \frac{1}{m}\sum_{t=1}^{m}\log p(a_t|a_{<t},T(d,q,S),\theta)
-    $$
+    $$GPTScore(a|d,q,S) = \frac{1}{m}\sum_{t=1}^{m}\log p(a_t|a_{\lt t},T(d,q,S),\theta)$$
     where $T(\cdot)$ is a prompt template that defines the evaluation protocol.
 2.  [LLM Judge](https://arxiv.org/abs/2306.05685)
 
