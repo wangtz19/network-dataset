@@ -23,11 +23,26 @@ To filter low-quality QA pairs, the following postprocessing operations should b
 *   Remove answers not ending with period
 *   Remove duplicated QA pairs
 *   Convert traditional chinese characters to simplified chinese characters
+*   Filter QA pairs with high vector similarities
+*   Filter QA pairs with high rouge scores
 
 
 ### QA Evaluator
-We adopt the framework of [GPTScore](https://github.com/jinlanfu/GPTScore) to evaluate our generated QA pairs.
+We evaluate our generated QA pairs in 2 ways:
+1.  [GPTScore](https://arxiv.org/abs/2302.04166)
 
+    Given the task description $d$, the raw context text $S$, the generated question $q$ and corresponding generated answer $a=\{a_1,a_2,\cdots,a_m\}$, we calculate the following conditional probability:
+    $$
+    \textrm{GPTScore}(a|d,q,S) = \frac{1}{m}\sum_{t=1}^{m}\log p(a_t|a_{<t},T(d,q,S),\theta)
+    $$
+    where $T(\cdot)$ is a prompt template that defines the evaluation protocol.
+2.  [LLM Judge](https://arxiv.org/abs/2306.05685)
+
+    While there are 3 LLM-as-a-judge variations proposed, namely pairwise comparison, single answer grading as well as reference-guided grading, we only implement single answer grading as it fits into our QA evaluating task.
+
+
+### QA Augmentor
+We augment exsiting QA pairs by rewriting questions in another form while keeping semantic information unchanged.
 
 ## Usage
 ### Split documents
@@ -67,6 +82,22 @@ python qa_evaluator.py
 --proxy <proxy>
 --key_path <key_path>
 ```  
+
+```
+usage: python qa_evaluator.py [-h] --input INPUT [--proxy PROXY] [--key_path KEY_PATH] [--output_format OUTPUT_FORMAT] [--score_type SCORE_TYPE] [--no_filter] [--need_split]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --input INPUT         input csv filename
+  --proxy PROXY         proxy address
+  --key_path KEY_PATH   openai key path
+  --output_format OUTPUT_FORMAT
+                        output format, `csv` or `jsonl`
+  --score_type SCORE_TYPE
+                        score type, `gpt_score` or `llm_judge`
+  --no_filter           whether to filter before eval, default is True
+  --need_split          whether to split question and answer, default is False
+```
 
 ### Augment Question
 ```
