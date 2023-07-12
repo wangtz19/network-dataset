@@ -84,13 +84,14 @@ def aug_questions(df):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", "-i" ,type=str, required=True, help="csv input file path")
+    parser.add_argument("--input", "-i" ,type=str, required=True, help="input file path, csv and jsonl are supported")
     parser.add_argument("--output_format", "-o", type=str, default="jsonl", help="output file format, csv or jsonl")
     parser.add_argument("--proxy", "-p", type=str, default=None, help="proxy address")
     parser.add_argument("--key_path", "-k", type=str, default=".openai-key2", help="openai key path")
     args = parser.parse_args()
 
-    assert args.input.endswith(".csv"), "input file must be csv file"
+    input_format = args.input.split(".")[-1]
+    assert input_format in ["csv", "jsonl"], "input file format must be csv or jsonl"
     assert args.output_format in ["csv", "jsonl"], "output file format must be csv or jsonl"
     if args.proxy is not None:
         set_proxy(proxy=args.proxy)
@@ -99,14 +100,19 @@ def main():
     assert test_proxy(), "proxy is not working"
     set_openai_key(args.key_path)
     
-    df = pd.read_csv(args.input)
+    if input_format == "csv":
+        df = pd.read_csv(args.input)
+    elif input_format == "jsonl":
+        df = pd.read_json(args.input, lines=True)
+    else:
+        raise NotImplementedError
     if "question" not in df.columns or "answer" not in df.columns:
         assert "prompt" in df.columns and "completion" in df.columns,\
             "input file must contain (prompt and completion) columns" + \
             "or (question and answer) columns"
         df.rename(columns={"prompt": "question", "completion": "answer"}, inplace=True)
     new_df = aug_questions(df)
-    tmp_path = args.input.replace(".csv", "-aug."+args.output_format)
+    tmp_path = args.input.replace(".csv", "-aug.csv")
     new_df.to_csv(tmp_path, index=False)
     filter_qa(tmp_path, output_format=args.output_format)
         
