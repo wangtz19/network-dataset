@@ -9,6 +9,7 @@ from tqdm import tqdm
 import json
 import random
 from qa_generator import filter_qa
+from concurrent.futures import ThreadPoolExecutor
 
 
 tqdm.pandas()
@@ -63,9 +64,26 @@ def aug_questions_by_chat(row, max_tokens=1000):
         return ""
 
 
-def aug_questions(df):
-    assert 'question' in df.columns and 'answer' in df.columns
-    df["aug_questions"] = df.progress_apply(aug_questions_by_chat, axis=1)
+def aug_questions(df, num_workers=3):
+    assert 'question' in df.columns and 'answer' in df.columns, \
+        "input file must contain question and answer columns"
+    assert num_workers > 0, "num_workers must be greater than 0"
+
+    if num_workers == 1:
+        df["aug_questions"] = df.progress_apply(aug_questions_by_chat, axis=1)
+    else:
+        # df_dict = df.to_dict(orient="records")
+        # with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        #     results = executor.map(aug_questions_by_chat, df_dict)
+        # df["aug_questions"] = list(results)
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = []
+            for _, row in df.iterrows():
+                futures.append(executor.submit(aug_questions_by_chat, row))
+            for future in tqdm(futures):
+                future.result()
+            df["aug_questions"] = [future.result() for future in futures]
+    
     df["aug_questions"] = "1." + df.aug_questions
     question_list, answer_list = [], []
     for idx, row in df.iterrows():
@@ -88,6 +106,7 @@ def main():
     parser.add_argument("--output_format", "-o", type=str, default="jsonl", help="output file format, csv or jsonl")
     parser.add_argument("--proxy", "-p", type=str, default=None, help="proxy address")
     parser.add_argument("--key_path", "-k", type=str, default=".openai-key2", help="openai key path")
+    parser.add_argument("--num_workers", "-n", type=int, default=3, help="number of workers for parallel processing")
     args = parser.parse_args()
 
     input_format = args.input.split(".")[-1]
@@ -111,7 +130,7 @@ def main():
             "input file must contain (prompt and completion) columns" + \
             "or (question and answer) columns"
         df.rename(columns={"prompt": "question", "completion": "answer"}, inplace=True)
-    new_df = aug_questions(df)
+    new_df = aug_questions(df, num_workers=args.num_workers)
     tmp_path = args.input.replace(".csv", "-aug.csv")
     new_df.to_csv(tmp_path, index=False)
     filter_qa(tmp_path, output_format=args.output_format)
