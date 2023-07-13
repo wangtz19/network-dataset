@@ -85,16 +85,18 @@ def aug_questions(df, num_workers=3):
             df["aug_questions"] = [future.result() for future in futures]
     
     df["aug_questions"] = "1." + df.aug_questions
-    question_list, answer_list = [], []
+    question_list, answer_list, old_question_list = [], [], []
     for idx, row in df.iterrows():
         aug_questions = row.aug_questions
         aug_questions = re.split(r"\d+\.", aug_questions)
         aug_questions = [q.strip() for q in aug_questions if q.strip()]
         question_list.extend(aug_questions)
         answer_list.extend([row.answer] * len(aug_questions))
+        old_question_list.extend([row.question] * len(aug_questions))
 
     new_df = pd.DataFrame({
         "question": question_list,
+        "old_question": old_question_list,
         "answer": answer_list
     })
     return new_df
