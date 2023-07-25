@@ -36,7 +36,7 @@ We evaluate our generated QA pairs in 2 ways:
     where $T(\cdot)$ is a prompt template that defines the evaluation protocol.
 2.  [LLM Judge](https://arxiv.org/abs/2306.05685)
 
-    While there are 3 LLM-as-a-judge variations proposed, namely pairwise comparison, single answer grading as well as reference-guided grading, we only implement single answer grading as it fits into our QA evaluating task.
+    While there are 3 LLM-as-a-judge variations proposed, namely pairwise comparison, single answer grading as well as reference-guided grading, we only implement two of them: single answer grading (`--score_type llm_judge`) and reference-guided grading (`--score_type llm_judge_ref`).
 
 
 ### QA Augmentor
@@ -92,7 +92,7 @@ optional arguments:
   --output_format OUTPUT_FORMAT
                         output format, `csv` or `jsonl`
   --score_type SCORE_TYPE
-                        score type, `gpt_score` or `llm_judge`
+                        score type, `gpt_score`, `llm_judge` or `llm_judge_ref`
   --no_filter           whether to filter before eval, default is True
   --need_split          whether to split question and answer, default is False
 ```

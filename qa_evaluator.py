@@ -12,6 +12,7 @@ import logging
 
 tqdm.pandas()
 
+SCORE_TYPES = ["gpt_score", "llm_judge", "llm_judge_ref"]
 
 # QUESTION_PROMPT = "请根据以下文本生成问题,尽可能使用简体中文,{aspect}\n\n文本: {context}\n\n问题:\n1."
 # ANSWER_PROMPT = "请根据以下文本生成答案,尽可能使用简体中文,{aspect}\n\n文本: {context}\n\n问题: {question}\n\n答案:\n"
@@ -66,6 +67,18 @@ LLM_JUDGE_ANSWER_PROMPT = """[指令]
 [AI回答结束]
 """
 
+LLM_JUDGE_REF_ANSWER_PROMPT = """[指令]
+请充当一个公正的裁判，评估AI助手的回答与参考答案之间的相似程度。你会获得一个参考答案，以及AI回答。参考答案为AI回答的预期值，你需要为AI回答与参考答案之间的相似程度、表达能力与语句含义进行评价。请通过提供简短的解释来开始你的评估，并尽可能做到客观。提供解释后，你必须遵循以下格式对回复进行评分(从1到10)：\"[[评分]]\"，例如：\"评分：[[5]]\"。
+
+[参考答案开始]
+{reference}
+[参考答案结束]
+
+[AI回答开始]
+{answer}
+[AI回答结束]
+"""
+
 
 def eval_answer_by_llm_judge(row, max_tokens=1000):
     try:
@@ -76,6 +89,32 @@ def eval_answer_by_llm_judge(row, max_tokens=1000):
                     "role": "user",
                     "content": LLM_JUDGE_ANSWER_PROMPT.format(
                         question=row["question"],
+                        answer=row["answer"]
+                    )
+                }
+            ],
+            temperature=0,
+            max_tokens=max_tokens,
+            top_p=1,
+            frequency_penalty=0,
+            presence_penalty=0,
+            stop=["\n\n"]
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        logging.error(e)
+        return ""
+
+def eval_answer_with_ref_by_llm_judge(row, max_tokens=2000):
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                    "role": "user",
+                    "content": LLM_JUDGE_REF_ANSWER_PROMPT.format(
+                        question=row["question"],
+                        reference=row["reference"],
                         answer=row["answer"]
                     )
                 }
@@ -119,7 +158,7 @@ def eval_answer_by_llm_judge(row, max_tokens=1000):
 
 def evalute_answer(csv_filename, score_type, need_split=True,
                    output_format="csv", filter_before_eval=True):
-    assert score_type in ["gpt_score", "llm_judge"], f"score_type should be `gpt_score` or `llm_judge`, but got {score_type}"
+    assert score_type in SCORE_TYPES, f"score_type should be one of {SCORE_TYPES}, but got {score_type}"
     df_raw = pd.read_csv(csv_filename)
     if score_type == "gpt_score":
         assert "context" in df_raw.columns, f"Column context not found in {csv_filename}"
@@ -156,10 +195,17 @@ def evalute_answer(csv_filename, score_type, need_split=True,
     score_field = "gs_score" if score_type == "gpt_score" else "lj_score"
     if score_type == "gpt_score":
         df_split[score_field] = df_split.progress_apply(eval_answer_by_gpt_score, axis=1)
-    else:
+    elif score_type == "llm_judge":
         df_split["reason"] = df_split.progress_apply(eval_answer_by_llm_judge, axis=1)
         score_pattern = re.compile(r"评分：\[\[(\d+)\]\]")
         df_split[score_field] = df_split["reason"].apply(lambda x: int(score_pattern.search(x).group(1)) if score_pattern.search(x) else -1)
+    elif score_type == "llm_judge_ref":
+        df_split["reason"] = df_split.progress_apply(eval_answer_with_ref_by_llm_judge, axis=1)
+        score_pattern = re.compile(r"评分：\[\[(\d+)\]\]")
+        df_split[score_field] = df_split["reason"].apply(lambda x: int(score_pattern.search(x).group(1)) if score_pattern.search(x) else -1)
+    else:
+        # unreachable
+        pass
 
     if output_format == "csv":
         save_filename = csv_filename.replace(".csv", "-eval.csv")
@@ -176,7 +222,7 @@ parser.add_argument("--input", type=str, required=True, help="input csv filename
 parser.add_argument("--proxy", type=str, default=None, help="proxy address")
 parser.add_argument("--key_path", type=str, default=".openai-key2", help="openai key path")
 parser.add_argument("--output_format", type=str, default="csv", help="output format, `csv` or `jsonl`")
-parser.add_argument("--score_type", type=str, default="llm_judge", help="score type, `gpt_score` or `llm_judge`")
+parser.add_argument("--score_type", type=str, default="llm_judge", help="score type, `gpt_score` or `llm_judge` or `llm_judge_ref` ")
 parser.add_argument("--no_filter", action="store_true", help="whether to filter before eval, default is True")
 parser.add_argument("--need_split", action="store_true", help="whether to split question and answer, default is False")
 
