@@ -34,6 +34,18 @@ AUGMENT_PROMPT = """根据以下示例问题和答案，改写给定问题，不
 1.
 """
 
+PROMPT_1_SHOT = """请将下述提问改写为更加口语化的形式，要求保持语义不变，保证提问与回复逻辑连贯，且提问形式更加符合日常口语习惯。以下是一些例子：
+示例1
+[提问1] {question1}
+[回复1] {answer1}
+[口语化提问1] {out_question1}
+
+以下是需要改写的提问：
+[提问] {question}
+[回复] {answer}
+[口语化提问]
+"""
+
 
 def aug_questions_by_chat(row, max_tokens=1000):
     example = random.choice(template)

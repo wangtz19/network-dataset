@@ -14,3 +14,5 @@ output/
 test*
 liantong-faq/
 .hf-token
+cac/
+.env*
